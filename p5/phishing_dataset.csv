@@ -1,0 +1,11 @@
+URL,Label
+http://example.com,0
+https://secure-site.com,0
+http://phishing-site.com/login,1
+https://safe-site.org,0
+http://verify-account.com,1
+http://login-update.com,1
+https://mybank.com,0
+http://secure-login.com,1
+http://freegift.com,1
+https://trustedsite.org,0

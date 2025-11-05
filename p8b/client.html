@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JWT Auth Client</title>
+  <style>
+    body { font-family: Arial; background: #eef0f3; margin: 0; padding: 0; }
+    .main { padding: 40px; max-width: 900px; margin: auto; }
+    h2 { color: #333; }
+    input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; }
+    button { padding: 12px 20px; margin: 8px 5px; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; background: #5a6d7c; color: white; }
+    button:hover { background: #44525f; }
+    #messageBox { margin-top: 20px; background: #fefefe; border: 2px solid #ccc; padding: 15px; border-radius: 6px; font-size: 20px; font-weight: bold; min-height: 60px; }
+    #roleContent { margin-top: 30px; padding: 20px; background: #fff; border-radius: 6px; border: 1px solid #ccc; }
+    #adminData { margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="main">
+    <h2>Register / Login with OTP + JWT</h2>
+    <input type="text" id="username" placeholder="Username">
+    <input type="password" id="password" placeholder="Password">
+
+    <div>
+      <button onclick="register()">Register</button>
+      <button onclick="login(event)">Login (Get OTP)</button>
+    </div>
+
+    <input type="text" id="otp" placeholder="Enter OTP">
+    <button onclick="verifyOtp()">Verify OTP</button>
+
+    <div id="messageBox">Messages will appear here...</div>
+    <div id="roleContent"></div>
+  </div>
+
+  <script>
+    const API_URL = "http://127.0.0.1:5000";
+    let token = null;
+
+    function showMessage(data, force=false) {
+      let msg = "";
+      if (typeof data === "string") msg = data;
+      else if (data.msg) msg = "📢 " + data.msg;
+      else if (data.error) msg = "❌ Error: " + data.error;
+      else if (data.access_token) msg = "✅ Login successful! Token generated.";
+      else msg = JSON.stringify(data, null, 2);
+      document.getElementById("messageBox").textContent = msg;
+    }
+
+    async function register() {
+      const u = document.getElementById("username").value;
+      const p = document.getElementById("password").value;
+      const res = await fetch(`${API_URL}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: u, password: p })
+      });
+      showMessage(await res.json(), true);
+    }
+
+    async function login(event) {
+      event.preventDefault();
+      const u = document.getElementById("username").value;
+      const p = document.getElementById("password").value;
+      const res = await fetch(`${API_URL}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: u, password: p })
+      });
+      const data = await res.json();
+      showMessage(data, true);
+      if (data.msg && data.msg.includes("OTP")) document.getElementById("otp").focus();
+    }
+
+    async function verifyOtp() {
+      const u = document.getElementById("username").value;
+      const otp = document.getElementById("otp").value;
+      const res = await fetch(`${API_URL}/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: u, otp })
+      });
+      const data = await res.json();
+      if (data.access_token) {
+        token = data.access_token;
+
+        // Fetch profile to get role
+        const profileRes = await fetch(`${API_URL}/profile`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const profileData = await profileRes.json();
+        showMessage(data, true);
+
+        const roleDiv = document.getElementById("roleContent");
+        if(profileData.role === "admin") {
+          roleDiv.innerHTML = `
+            <h3>Admin Dashboard</h3>
+            <p>Welcome, ${profileData.username}! You have admin privileges.</p>
+            <button onclick="getAdmin()">View Admin Resources</button>
+            <button onclick="getAllUsers()">View All Users</button>
+            <div id="adminData"></div>
+          `;
+        } else {
+          roleDiv.innerHTML = `
+            <h3>User Dashboard</h3>
+            <p>Welcome, ${profileData.username}! You have regular user access.</p>
+          `;
+        }
+      } else {
+        showMessage(data, true);
+      }
+    }
+
+    async function getAdmin() {
+      if (!token) return alert("Login first!");
+      const res = await fetch(`${API_URL}/admin`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      const adminDiv = document.getElementById("adminData");
+      adminDiv.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+    }
+
+    async function getAllUsers() {
+      if (!token) return alert("Login first!");
+      const res = await fetch(`${API_URL}/admin/users`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      const adminDiv = document.getElementById("adminData");
+      if(data.users) {
+        adminDiv.innerHTML = `<h4>Registered Users:</h4><ul>${data.users.map(u => `<li>${u.username} (${u.role})</li>`).join("")}</ul>`;
+      } else {
+        adminDiv.innerHTML = `<p>No users found.</p>`;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+Chat between support agent and customer:
+Customer: Hi, my name is Rahul Gupta and my order ID is 12345.
+Agent: Sure, Rahul. Can I have your email?
+Customer: Yes, it's rahulgupta1995@gmail.com.
+Agent: Thank you, we will contact you soon at that email.

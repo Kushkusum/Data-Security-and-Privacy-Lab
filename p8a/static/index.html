@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RSA Digital Signature</title>
+  <style>
+    body { font-family: Arial; background: #eef0f3; margin: 0; padding: 20px; }
+    input, textarea { width: 100%; padding: 10px; margin: 10px 0; font-size: 16px; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; background: #5a6d7c; color: white; border: none; border-radius: 6px; }
+    button:hover { background: #44525f; }
+    pre { background: #fff; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+    #signatureBox, #verifyBox { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h2>RSA Digital Signature Demo</h2>
+
+  <button onclick="generateKeys()">Generate RSA Keys</button>
+  <pre id="keysBox">Keys will appear here...</pre>
+
+  <h3>Sign a Message</h3>
+  <textarea id="message" placeholder="Enter message to sign"></textarea>
+  <button onclick="signMessage()">Sign Message</button>
+  <pre id="signatureBox">Signature will appear here...</pre>
+
+  <h3>Verify a Signature</h3>
+  <textarea id="verifyMessage" placeholder="Enter message"></textarea>
+  <textarea id="verifySignature" placeholder="Paste signature here"></textarea>
+  <button onclick="verifyMessage()">Verify Signature</button>
+  <pre id="verifyBox">Verification result will appear here...</pre>
+
+  <script>
+    const API_URL = "http://127.0.0.1:5000";
+
+    async function generateKeys() {
+      const res = await fetch(`${API_URL}/generate-keys`);
+      const data = await res.json();
+      document.getElementById("keysBox").textContent = `Public Key:\n${data.public_key}\n\nPrivate Key:\n${data.private_key}`;
+    }
+
+    async function signMessage() {
+      const message = document.getElementById("message").value;
+      const res = await fetch(`${API_URL}/sign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message })
+      });
+      const data = await res.json();
+      document.getElementById("signatureBox").textContent = data.signature || data.error;
+    }
+
+    async function verifyMessage() {
+      const message = document.getElementById("verifyMessage").value;
+      const signature = document.getElementById("verifySignature").value;
+      const res = await fetch(`${API_URL}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, signature })
+      });
+      const data = await res.json();
+      document.getElementById("verifyBox").textContent = data.msg;
+    }
+  </script>
+</body>
+</html>

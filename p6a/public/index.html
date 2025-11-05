@@ -1,0 +1,143 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Simple E2EE Chat (demo)</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding:12px; }
+    #log { border:1px solid #ddd; padding:8px; max-height:300px; overflow:auto; margin-top:10px; }
+  </style>
+</head>
+<body>
+  <h2>E2EE Chat Demo</h2>
+  <div>Logged in as: <span id="userid"></span></div>
+  <div>
+    <label>To (userId): <input id="to" /></label>
+    <button id="getKey">Fetch Key</button>
+  </div>
+  <div>
+    <textarea id="message" rows="4" cols="60" placeholder="Type message"></textarea><br/>
+    <button id="send">Send</button>
+  </div>
+  <div id="log"></div>
+
+  <!-- ✅ Load libsodium-wrappers -->
+  <script src="https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.9/dist/libsodium-wrappers.js"></script>
+
+  <script>
+  sodium.ready.then(() => {
+    const S = sodium;
+
+    const toBase64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+    const fromBase64 = b64 => {
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+      return arr;
+    };
+
+    const params = new URLSearchParams(location.search);
+    const userId = params.get('user') || prompt('Enter user id (e.g. alice)');
+    document.getElementById('userid').textContent = userId;
+
+    // Generate or load keypair
+    let keypair;
+    const savedPub = localStorage.getItem(userId + ':pub');
+    const savedPriv = localStorage.getItem(userId + ':priv');
+    if (savedPub && savedPriv) {
+      keypair = {
+        publicKey: fromBase64(savedPub),
+        privateKey: fromBase64(savedPriv)
+      };
+      appendLog('Loaded saved keypair');
+    } else {
+      keypair = S.crypto_box_keypair();
+      localStorage.setItem(userId + ':pub', toBase64(keypair.publicKey));
+      localStorage.setItem(userId + ':priv', toBase64(keypair.privateKey));
+      appendLog('Generated new keypair');
+    }
+    const myPubB64 = toBase64(keypair.publicKey);
+
+    // Register public key with server
+    fetch('/register', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ userId, publicKey: myPubB64 })
+    }).then(() => appendLog('Registered public key with server'));
+
+    // WebSocket
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host);
+    ws.addEventListener('open', () => {
+      appendLog('WebSocket open, identifying...');
+      ws.send(JSON.stringify({ type: 'identify', userId }));
+    });
+
+    ws.addEventListener('message', ev => {
+      console.log('WS msg:', ev.data);
+      try {
+        const data = JSON.parse(ev.data);
+        if (data.type === 'identify-ack') {
+          appendLog('⚡ Identified as ' + data.userId);
+        } else if (data.type === 'message') {
+          const ct = fromBase64(data.ciphertext);
+          const nonce = fromBase64(data.nonce);
+          const senderPub = fromBase64(data.senderPubKey);
+          try {
+            const plain = S.crypto_box_open_easy(ct, nonce, senderPub, keypair.privateKey);
+            appendLog(`🔐 <b>${data.from}</b>: ${new TextDecoder().decode(plain)}`);
+          } catch (e) {
+            appendLog('❌ Failed to decrypt');
+          }
+        } else if (data.type === 'sent') {
+          appendLog('Message relayed by server');
+        } else if (data.type === 'error') {
+          appendLog('Server error: ' + data.message);
+        }
+      } catch (e) { console.error(e); }
+    });
+
+    document.getElementById('send').onclick = async () => {
+      const to = document.getElementById('to').value.trim();
+      const text = document.getElementById('message').value;
+      if (!to || !text) return alert('Enter recipient and message');
+
+      const r = await fetch('/pubkey/' + encodeURIComponent(to));
+      if (!r.ok) { appendLog('Recipient key not found'); return; }
+      const { publicKey: recipientPubB64 } = await r.json();
+      const recipientPub = fromBase64(recipientPubB64);
+
+      const nonce = S.randombytes_buf(S.crypto_box_NONCEBYTES);
+      const ct = S.crypto_box_easy(new TextEncoder().encode(text), nonce, recipientPub, keypair.privateKey);
+
+      ws.send(JSON.stringify({
+        type: 'message',
+        from: userId,
+        to,
+        nonce: toBase64(nonce),
+        ciphertext: toBase64(ct),
+        senderPubKey: myPubB64
+      }));
+      appendLog(`→ Encrypted message to ${to}`);
+      document.getElementById('message').value = '';
+    };
+
+    document.getElementById('getKey').onclick = async () => {
+      const to = document.getElementById('to').value.trim();
+      if (!to) return;
+      const r = await fetch('/pubkey/' + encodeURIComponent(to));
+      if (!r.ok) return appendLog('No public key for ' + to);
+      const { publicKey } = await r.json();
+      appendLog(`${to}'s public key: ${publicKey}`);
+    };
+
+    function appendLog(html) {
+      const log = document.getElementById('log');
+      const d = document.createElement('div');
+      d.innerHTML = html;
+      log.appendChild(d);
+      log.scrollTop = log.scrollHeight;
+    }
+  });
+  </script>
+</body>
+</html>
